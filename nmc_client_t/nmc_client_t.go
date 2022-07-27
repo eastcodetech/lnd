@@ -1,10 +1,12 @@
 package main
 
 import (
-	"github.com/eastcodetech/lnd/nmc_client"
+	"fmt"
+
+	"github.com/eastcodetech/lnd/nmc_client/user"
 )
 
 func main() {
-	nmc_client = nmc_client.user.GetNmcClient()
-	fmt.Print(nmc_client)
+	client := user.GetNmcClient()
+	fmt.Print(client)
 }
