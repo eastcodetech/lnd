@@ -1,4 +1,4 @@
-package nmc_network
+package nmc_client
 
 import (
 	"github.com/btcsuite/btcd/rpcclient"
