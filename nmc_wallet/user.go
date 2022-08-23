@@ -15,15 +15,11 @@ test blockchains
 
 // Hex string returns
 type Hex struct {
-	Result struct {
-		hex string
-	}
+	Result string
 }
 
 type Hex2 struct {
-	Result []struct {
-		hex string
-	}
+	Result []string
 }
 
 // struct for list unspent
