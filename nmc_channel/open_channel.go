@@ -12,20 +12,18 @@ import (
 	"github.com/lightningnetwork/lnd/nmc_wallet"
 )
 
-// This is a sample script of all the calls that would have to be made to
-// mimic what the lightning OpenChannel function does.
-// This will print the txid for the broadcasted nmc transaction.
-//! Sometimes the opening channel errors out but the money is still being sent to the multisig
+// Opens a channel and logs the open channel into Namecoin
 func main() {
-	// amount to be entered into the multisig wallet
-	amount, _ := btcutil.NewAmount(1.0)
+	fundingAmount := 1.0
 
 	btcAddress1 := "bcrt1qekn2wfen3qe90vxe9semv2mqm0wt3880ha4pne"
 	btcAddress2 := "bcrt1qavyf856ehh9gdehn2xne030q38qvzdsugy24aq"
 	pubKey1 := "03f5bdb7460ff0103acb865495730312b68b0866a96cbcf0d48f14f1c98706a71d"
 	pubKey2 := "03e4c8af01a9ddfbbb8de335283a6282b6b96831b75c53f4164698f610622f976d"
+	btcWallet1 := "brandon"
+	btcWallet2 := "liam"
 
-	txid, err := OpenChannel(btcAddress1, "brandon", pubKey1, btcAddress2, "liam", pubKey2, amount)
+	txid, err := OpenChannel(btcAddress1, btcWallet1, pubKey1, btcAddress2, btcWallet2, pubKey2, fundingAmount)
 	if len(txid) < 2 || err != nil {
 		panic(fmt.Sprint("Did not receive the txid", err))
 	}
@@ -33,140 +31,71 @@ func main() {
 	nmcAddress1 := "n3yYYSfH932jt8kWGVj8hrtWVkaXrujvY1"
 	nmcWalletName := "brandon"
 
-	// These are just random prefix
+	// These are just random prefixes for now
 	binaryPrefix := "011001010111010001100011"
 	binaryTxType := "0000"
 
 	// Will have to adjust these numbers to be the correct number of bits
-	binaryBalance1 := intToBinary(int64(amount))
+	binaryBalance1 := intToBinary(int64(fundingAmount))
 
-	// These function just return random binary values
+	// These function just return random binary values for now
+	//* We will have to figure how to get the values from Lnd
 	channelRef := getChannelRef()
 	newChannelRef := getNewChannelRef()
 
-	// Will have to decide what scheme we should use
+	// We can skip this if we are only using hex
 	binary := fmt.Sprintf("%s%s%s%s%s", binaryPrefix, binaryTxType, binaryBalance1,
 		channelRef, newChannelRef)
 
 	hex := binaryToHex(binary)
+	fmt.Println("The message is " + hex)
 
 	txid, err = nmcBroadcastMessage(hex, nmcAddress1, nmcWalletName)
 	if err != nil {
-		fmt.Println("Error broadcasting message")
-		panic(err)
+		panic(fmt.Sprint("Failed to broadcast message ", err))
 	}
 
-	fmt.Print(txid)
+	fmt.Print("The transaction id in NMC is " + txid)
 }
 
-// This will often fail for two reasons
-// 1. Insufficient funds
-// 2. A Psbt that shouldn't be complete is complete
-func OpenChannel(address1 string, name1 string, pubkey1 string, address2 string, name2 string, pubkey2 string, amount btcutil.Amount) (string, error) {
+func OpenChannel(address1 string, btcWallet1 string, pubkey1 string, address2 string, btcWallet2 string, pubkey2 string, amount float64) (string, error) {
 
-	config1 := rpcclient.ConnConfig{
-		Host:         "10.10.10.120:18444/wallet/" + name1,
-		Endpoint:     "ws",
-		User:         "bitcoinrpc",
-		Pass:         "rpc",
-		Params:       chaincfg.RegressionNetParams.Name,
-		DisableTLS:   true,
-		HTTPPostMode: true,
-	}
-	config2 := rpcclient.ConnConfig{
-		Host:         "10.10.10.120:18444/wallet/" + name2,
-		Endpoint:     "ws",
-		User:         "bitcoinrpc",
-		Pass:         "rpc",
-		Params:       chaincfg.RegressionNetParams.Name,
-		DisableTLS:   true,
-		HTTPPostMode: true,
-	}
+	addresses := []string{pubkey1, pubkey2}
 
-	user1, err := rpcclient.New(&config1, nil)
+	multisigAddress, err := nmc_wallet.BtcAddMultiSig(2, addresses, btcWallet1)
 	if err != nil {
-		panic(fmt.Sprint("Error creating user1 client: ", err))
+		panic("Could not make multisig")
 	}
 
-	user2, err := rpcclient.New(&config2, nil)
+	nmc_wallet.BtcImportAddress(multisigAddress.Result.Address, btcWallet1)
+	nmc_wallet.BtcImportAddress(multisigAddress.Result.Address, btcWallet2)
+
+	nmc_wallet.BtcGenerateToAddress(1, multisigAddress.Result.Address, btcWallet1)
+
+	_, err = nmc_wallet.BtcSendToAddress(multisigAddress.Result.Address, amount, btcWallet1)
 	if err != nil {
-		panic(fmt.Sprint("Error creating user2 client: ", err))
+		panic(fmt.Sprint("Could not send to Btc ", err))
 	}
 
-	user1Address, err := btcutil.DecodeAddress(pubkey1, &chaincfg.RegressionNetParams)
-	user2Address, err := btcutil.DecodeAddress(pubkey2, &chaincfg.RegressionNetParams)
-	addresses := []btcutil.Address{user2Address, user1Address}
+	nmc_wallet.BtcGenerateToAddress(1, multisigAddress.Result.Address, btcWallet1)
 
-	// I'm not sure what the last param is for this function
-	// leaving it blank seems to work
-	multisigAddress, err := user1.AddMultisigAddress(2, addresses, "")
+	psbtResult, err := nmc_wallet.BtcCreateFundedPsbt(address1, amount, btcWallet1)
 
-	err = user1.ImportAddress(multisigAddress.String())
-	if err != nil {
-		panic(fmt.Sprint("Error importing multisig to user1: ", err))
+	user1Psbt, err := nmc_wallet.BtcProcessPsbt(psbtResult.Result.Psbt, btcWallet1)
+	if user1Psbt.Result.Complete {
+		panic("User1's Psbt was complete")
 	}
-	err = user2.ImportAddress(multisigAddress.String())
-	if err != nil {
-		panic(fmt.Sprint("Error importing multisig to user2: ", err))
+	user2Psbt, err := nmc_wallet.BtcProcessPsbt(psbtResult.Result.Psbt, btcWallet2)
+	if user2Psbt.Result.Complete {
+		panic("User1's Psbt was complete")
 	}
 
-	maxTries := int64(2)
-	_, err = user1.GenerateToAddress(1, multisigAddress, &maxTries)
-	if err != nil {
-		panic(fmt.Sprint("Error generating to multisig address: ", err))
-	}
+	completePsbt := nmc_wallet.BtcCombinePSBTTest(user1Psbt.Result.Psbt, user2Psbt.Result.Psbt)
 
-	txid, err := user1.SendToAddress(multisigAddress, amount)
+	finalizedPsbt := nmc_wallet.BtcFinalizePsbtTest(completePsbt, btcWallet1)
 
-	_, err = user1.GenerateToAddress(2, multisigAddress, &maxTries)
-	if err != nil {
-		panic(fmt.Sprint("Error generating to multisig address: ", err))
-	}
-
-	psbtInput := []btcjson.PsbtInput{btcjson.PsbtInput{
-		Txid:     txid.String(),
-		Vout:     0,
-		Sequence: 0,
-	}}
-
-	psbtOutput := []btcjson.PsbtOutput{btcjson.NewPsbtOutput(address1, amount)}
-	locktime := uint32(0)
-	options := btcjson.WalletCreateFundedPsbtOpts{}
-	bip32Derivs := true
-
-	fundedPsbtResult, err := user1.WalletCreateFundedPsbt(
-		psbtInput, psbtOutput, &locktime, &options, &bip32Derivs)
-	if err != nil {
-		panic(fmt.Sprint("Error funding Psbt: ", err))
-	}
-	sign := true
-	user1ProcessPsbtResult, err := user1.WalletProcessPsbt(
-		fundedPsbtResult.Psbt, &sign, rpcclient.SigHashAll, &bip32Derivs)
-	if err != nil {
-		panic(fmt.Sprint("Error processing Psbt for user1: ", err))
-	}
-	// ! for some reason this keeps coming back as complete
-	if user1ProcessPsbtResult.Complete {
-		panic(fmt.Sprint("Half signed psbt was complete for user1"))
-	}
-
-	user2ProcessPsbtResult, err := user2.WalletProcessPsbt(
-		fundedPsbtResult.Psbt, &sign, rpcclient.SigHashAll, &bip32Derivs)
-	if err != nil {
-		panic(fmt.Sprint("Error processing Psbt for user2: ", err))
-	}
-	if user2ProcessPsbtResult.Complete {
-		panic(fmt.Sprint("Half signed psbt was complete for user2"))
-	}
-
-	combinedPsbtStr := nmc_wallet.BtcCombinePSBTTest(
-		user1ProcessPsbtResult.Psbt, user2ProcessPsbtResult.Psbt)
-
-	finalizedPsbt := nmc_wallet.BtcFinalizePsbtTest(combinedPsbtStr)
-
-	txid1 := nmc_wallet.BtcSendRawTxTest(finalizedPsbt.Result.Hex)
-
-	return txid1, nil
+	txid := nmc_wallet.BtcSendRawTxTest(finalizedPsbt.Result.Hex, btcWallet1)
+	return txid, nil
 
 }
 
@@ -175,19 +104,23 @@ func nmcBroadcastMessage(hex string, nmcAddress1 string, nmcWalletName1 string) 
 
 	txid, err := nmc_wallet.NmcCreateEmptyRawTransaction(nmcAddress1, hex, nmcWalletName1)
 	if err != nil {
-		return "", err
+		panic(fmt.Sprint("Failed to create empty raw transaction on NMC ", err))
+	}
+	txid1, err := nmc_wallet.NmcFundRawTransaction(txid.Result, nmcWalletName1)
+	if err != nil {
+		panic(fmt.Sprint("Failed to fund raw transaction on NMC ", err))
 	}
 
-	txid1 := nmc_wallet.NmcFundRawTransaction(txid.Result, nmcWalletName1)
-
-	txid2, err1 := nmc_wallet.NmcSignRawTransactionWithWallet(txid1.Result.Hex, nmcWalletName1)
-	if err1 != nil {
-		return "", err
+	txid2, err := nmc_wallet.NmcSignRawTransactionWithWallet(txid1.Result.Hex, nmcWalletName1)
+	if err != nil {
+		panic(fmt.Sprint("Failed to sign raw transaction on NMC ", err))
 	}
 
-	txid3, err2 := nmc_wallet.NmcSendRawTransaction(txid2.Result.Hex, nmcWalletName1)
-
-	return txid3.Result, err2
+	txid3, err := nmc_wallet.NmcSendRawTransaction(txid2.Result.Hex, nmcWalletName1)
+	if err != nil {
+		panic(fmt.Sprint("Failed to send raw transaction on NMC ", err))
+	}
+	return txid3.Result, err
 }
 
 func getAddress(client1 rpcclient.Client, address1 string) (btcutil.Address, error) {
