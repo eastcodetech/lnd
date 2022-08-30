@@ -15,6 +15,7 @@ import (
 // Opens a channel and logs the open channel into Namecoin
 func main() {
 	fundingAmount := 1.0
+	fundingAmountSats := 1.0 * 100_000_000
 
 	btcAddress1 := "bcrt1qekn2wfen3qe90vxe9semv2mqm0wt3880ha4pne"
 	btcAddress2 := "bcrt1qavyf856ehh9gdehn2xne030q38qvzdsugy24aq"
@@ -32,22 +33,29 @@ func main() {
 	nmcWalletName := "brandon"
 
 	// These are just random prefixes for now
-	binaryPrefix := "011001010111010001100011"
-	binaryTxType := "0000"
+	// binaryPrefix := "011001010111010001100011"
+	// binaryTxType := "0000"
+	hexPrefix := "FFFFFF"
+	hexTxType := "ABCD"
+	hex_num := strconv.FormatInt(int64(fundingAmountSats), 16)
 
 	// Will have to adjust these numbers to be the correct number of bits
-	binaryBalance1 := intToBinary(int64(fundingAmount))
+	// binaryBalance1 := intToBinary(int64(fundingAmount))
 
 	// These function just return random binary values for now
 	//* We will have to figure how to get the values from Lnd
 	channelRef := getChannelRef()
-	newChannelRef := getNewChannelRef()
 
 	// We can skip this if we are only using hex
-	binary := fmt.Sprintf("%s%s%s%s%s", binaryPrefix, binaryTxType, binaryBalance1,
-		channelRef, newChannelRef)
+	// binary := fmt.Sprintf("%s%s%s%s%s", binaryPrefix, binaryTxType, binaryBalance1,
+	// 	channelRef, newChannelRef)
 
-	hex := binaryToHex(binary)
+	// hex := binaryToHex(binary)
+
+	hex := hexPrefix + hexTxType + hex_num + channelRef
+	if len(hex)%2 == 1 {
+		hex = hex + "0"
+	}
 	fmt.Println("The message is " + hex)
 
 	txid, err = nmcBroadcastMessage(hex, nmcAddress1, nmcWalletName)
@@ -55,7 +63,7 @@ func main() {
 		panic(fmt.Sprint("Failed to broadcast message ", err))
 	}
 
-	fmt.Print("The transaction id in NMC is " + txid)
+	fmt.Println("The transaction id in NMC is " + txid)
 }
 
 func OpenChannel(address1 string, btcWallet1 string, pubkey1 string, address2 string, btcWallet2 string, pubkey2 string, amount float64) (string, error) {
@@ -67,6 +75,9 @@ func OpenChannel(address1 string, btcWallet1 string, pubkey1 string, address2 st
 		panic("Could not make multisig")
 	}
 
+	balance, err := nmc_wallet.BtcGetBalance(btcWallet1)
+	fmt.Println("User balance after", balance)
+
 	nmc_wallet.BtcImportAddress(multisigAddress.Result.Address, btcWallet1)
 	nmc_wallet.BtcImportAddress(multisigAddress.Result.Address, btcWallet2)
 
@@ -77,9 +88,15 @@ func OpenChannel(address1 string, btcWallet1 string, pubkey1 string, address2 st
 		panic(fmt.Sprint("Could not send to Btc ", err))
 	}
 
-	nmc_wallet.BtcGenerateToAddress(1, multisigAddress.Result.Address, btcWallet1)
+	nmc_wallet.BtcGenerateToAddress(4, multisigAddress.Result.Address, btcWallet1)
+
+	// This balance should be less then the first balance
+	balance, err = nmc_wallet.BtcGetBalance(btcWallet1)
+	fmt.Println("User balance before ", balance)
 
 	psbtResult, err := nmc_wallet.BtcCreateFundedPsbt(address1, amount, btcWallet1)
+
+	nmc_wallet.BtcGenerateToAddress(4, multisigAddress.Result.Address, btcWallet1)
 
 	user1Psbt, err := nmc_wallet.BtcProcessPsbt(psbtResult.Result.Psbt, btcWallet1)
 	if user1Psbt.Result.Complete {
@@ -94,8 +111,16 @@ func OpenChannel(address1 string, btcWallet1 string, pubkey1 string, address2 st
 
 	finalizedPsbt := nmc_wallet.BtcFinalizePsbtTest(completePsbt, btcWallet1)
 
-	txid := nmc_wallet.BtcSendRawTxTest(finalizedPsbt.Result.Hex, btcWallet1)
-	return txid, nil
+	// This is publishing the psbt which we will do only when the channel closes
+	// txid := nmc_wallet.BtcSendRawTxTest(finalizedPsbt.Result.Hex, btcWallet1)
+
+	nmc_wallet.BtcGenerateToAddress(4, multisigAddress.Result.Address, btcWallet1)
+
+	// balance should be similar to the first balance
+	balance, err = nmc_wallet.BtcGetBalance(btcWallet1)
+	fmt.Println("User balance after", balance)
+
+	return finalizedPsbt.Result.Hex, nil
 
 }
 
@@ -210,9 +235,9 @@ func getAddresses(decodedTx nmc_wallet.DecodeRawTransaction, address1 string, ad
 }
 
 func getChannelRef() string {
-	return "1010101111111110101"
+	return "0123456789ABCDEF"
 }
 
 func getNewChannelRef() string {
-	return "0000000000000000000"
+	return "FFFFFFFFFFFFFFFF"
 }

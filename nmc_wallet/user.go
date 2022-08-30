@@ -790,6 +790,29 @@ func NmcFinalizePsbt(psbt string, wallet string) (NmcFinalizedPsbtResult, error)
 	}
 }
 
+type Balance struct {
+	Result float64 `json:"result"`
+	Error  error   `json:"error"`
+	Id     string  `json:"id"`
+}
+
+func BtcGetBalance(wallet string) (Balance, error) {
+	testRequest := fmt.Sprint(`{"jsonrpc": "2.0", "id":"", "method": "getbalance", "params": []}`)
+	req, _ := http.NewRequest("POST", "https://8fa0-142-163-116-51.eu.ngrok.io/wallet/"+wallet, strings.NewReader(testRequest))
+	req.SetBasicAuth("bitcoinrpc", "rpc")
+	req.Header.Add("content-type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return Balance{}, err
+	} else {
+		defer res.Body.Close()
+		var j Balance
+		body, _ := ioutil.ReadAll(res.Body)
+		json.Unmarshal(body, &j)
+		return j, nil
+	}
+}
+
 type getTransactionResult struct {
 	Result struct {
 		Amount            int      `json:"amount"`
