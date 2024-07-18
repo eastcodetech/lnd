@@ -5,7 +5,7 @@
 [![Irc](https://img.shields.io/badge/chat-on%20libera-brightgreen.svg)](https://web.libera.chat/#lnd)
 [![Godoc](https://godoc.org/github.com/lightningnetwork/lnd?status.svg)](https://godoc.org/github.com/lightningnetwork/lnd)
 
-<img src="logo.png">
+<img src="logo.png">   
 
 The Lightning Network Daemon (`lnd`) - is a complete implementation of a
 [Lightning Network](https://lightning.network) node.  `lnd` has several pluggable back-end
